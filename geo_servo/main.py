@@ -1,3 +1,7 @@
+# TODO:
+# - Create Jacobian function
+# - Create PD with GC control!
+
 import os
 import time
 import sys
@@ -13,7 +17,6 @@ if __name__ == "__main__":
     
     robot = Robot(ip=ip)
     pose = robot.get_pose(radians=False)
-    # print(pose)
-    print(robot.compute_rotation_matrix())
     print(robot.fk)
+    print(robot.get_mass_matrix())
     
