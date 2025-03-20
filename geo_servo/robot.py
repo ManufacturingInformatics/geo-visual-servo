@@ -8,16 +8,17 @@ from sympy import Symbol, Matrix
 import sympy as sy
 
 from xarm.wrapper import XArmAPI
-from common import load_inertia_params, load_tcp_params
+from common import load_inertia_params, load_tcp_params, check_psd
 from jaxlie import SE3
 
 
 class Robot:
     
-    def __init__(self, ip, motion_enable=True, set_mode=0):
+    def __init__(self, ip, motion_enable=True, set_mode=0, is_radian=True):
         
         self.ip = ip
-        self.arm = XArmAPI(self.ip)
+        self.is_radian = is_radian
+        self.arm = XArmAPI(self.ip, is_radian=self.is_radian)
         self.arm.motion_enable(enable=motion_enable)
         self.arm.set_mode(set_mode)
         self.mass, self.inertia = load_inertia_params()
@@ -42,6 +43,7 @@ class Robot:
         )
         self.mass_matrix = jnp.zeros((6,6))
         self.jacobian = jnp.zeros((6,6))
+        self.b_mat = jnp.ones((6,1))
 
         # Zero configurations        
         self.g_0 = jnp.array([[1.0, 0, 0,  2.07386743e-01],
@@ -84,11 +86,47 @@ class Robot:
         self.arm.set_mode(mode=4)
         self.arm.set_state(0)
         
+    @property
+    def joint_vals(self):
+        """
+        Property for the joint values, rather than a function. This also casts the joint values as a JAX NumPy array that allows for the useful computation of things. 
+
+        Returns:
+            jnp.ndarray : JAX NumPy array corresponding to the 6 joint positions
+        """
+        return jnp.asarray(self._get_joints())[0:6].reshape((6,1))
+    
+    @property
+    def joint_speeds(self):
+        """
+        Property for the joint speeds, found in rad/s if self.is_radians=True. Converted from list to JAX NumPy array for convenience.
+        
+        Returns:
+            jnp.ndarray: _description_
+        """
+        return jnp.asarray(self._get_joint_speeds())[0:6].reshape((6,1))
+    
+    @property
     def get_mass_matrix(self) -> jnp.ndarray:
         return self._compute_mass_matrix()
     
+    @property
     def get_pose(self, radians=False) -> jnp.ndarray:
         return jnp.array(self.arm.get_position(is_radian=radians)[1])
+    
+    @property
+    def get_jacobian(self) -> jnp.ndarray:
+        """
+        Returns the 6x6 Jacobian matrix. This only applies to the xArm 6, which only has 6 joints. 
+
+        Returns:
+            jnp.ndarray: Jacobian array cast as a JAX NumPy array
+        """
+        return self._jacobian()
+    
+    @property
+    def geodesic_distance(self, g0, g1):
+        pass
     
     def compute_rotation_matrix(self) -> jnp.ndarray:
         """
@@ -132,6 +170,62 @@ class Robot:
         
     def _get_joints(self, is_radian=False) -> list:
         return self.arm.get_joint_states(is_radian=is_radian)[1][0]
+    
+    def _get_joint_speeds(self):
+        return self.arm.realtime_joint_speeds
+    
+    def _jacobian(self) -> jnp.ndarray:
+        """
+        Computes the geometric Jacobian for the current state of the manipulator. Currently the approach, whilst not using the product of twists that it is using in the 
+
+        Returns:
+            jnp.ndarray: _description_
+        """
+        qVals = self._get_joints()
+        J = sy.zeros(6,6)
+        
+        for i in range(0, 6):
+            if i == 0:
+                T = Matrix([
+                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
+                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
+                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
+                    [0, 0, 0, 1]
+                ])
+                T_p = T[0:3,3]
+                jV = T_p.jacobian(self.q)
+                jW = Matrix([[T[0:3,self.rot_axis[i]]]])
+                J[0:3,:] = jV
+                J[3:6,i] = jW
+            else:
+                T_temp = Matrix([
+                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
+                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
+                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
+                    [0, 0, 0, 1]
+                ])
+                T = T * T_temp
+                T_p = T[0:3,3]
+                jV = T_p.jacobian(self.q)
+                jW = Matrix([[T[0:3,self.rot_axis[i]]]])
+                J[0:3,:] = jV
+                J[3:6,i] = jW
+                
+        eval_dict = {
+            self.q[0]: qVals[0],
+            self.q[1]: qVals[1],
+            self.q[2]: qVals[2],
+            self.q[3]: qVals[3],
+            self.q[4]: qVals[4],
+            self.q[5]: qVals[5]
+        }
+        J_eval = J.subs(eval_dict).evalf(n=3)
+        return jnp.array(
+            np.array(J_eval).astype(np.float64)
+        )
+    
+    def _geodesic_distance(self):
+        pass    
                 
     def _compute_mass_matrix(self) -> jnp.ndarray:
         """
@@ -182,8 +276,7 @@ class Robot:
             self.q[5]: qVals[5]
         }
         M_eval = M.subs(eval_dict).evalf(n=3).applyfunc(lambda i: 0 if -1e-3<i<1e-3 else i)
-        return jnp.array(
+        return jnp.diag(jnp.diagonal(jnp.array(
             np.array(M_eval).astype(np.float64)
-        )
-        
+        )))
         

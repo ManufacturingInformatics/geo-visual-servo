@@ -2,6 +2,27 @@ import jax.numpy as jnp
 import yaml
 from configparser import ConfigParser
 
+def check_psd(mat):
+    """
+    Checks to see if the matrix is positive definite. Used for the computation of the distance approximation in SE(3). 
+    Values:
+        1 :  Matrix is positive definite
+        2 : Matrix is positive semi-definite
+        -1 : Matrix is neither definite or semi-definite
+
+    Args:
+        mat (jnp.ndarray): JAX NumPy array that is the mass-inertia matrix of the manipulator at a given configuration
+
+    Returns:
+        int: Integer indicator as to whether the the matrix is positive definite or positive semi-definite.  
+    """
+    if jnp.all(jnp.linalg.eigvals(mat) > 0):
+        return 1
+    elif jnp.all(jnp.linalg.eigvals(mat) >= 0):
+        return 2
+    else: 
+        return -1
+
 def load_inertia_params():
     """
     Loads the mass and inertial characteristics from the YAML description file, and returns an array of masses for each link and the inertia matrices

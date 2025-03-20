@@ -6,8 +6,10 @@ import os
 import time
 import sys
 from configparser import ConfigParser
+import jax.numpy as jnp
 from robot import Robot
-from common import load_inertia_params
+from controller import Controller
+from common import check_psd
 
 if __name__ == "__main__":
     
@@ -16,7 +18,14 @@ if __name__ == "__main__":
     ip = parser.get('xArm', 'ip')
     
     robot = Robot(ip=ip)
-    pose = robot.get_pose(radians=False)
-    print(robot.fk)
-    print(robot.get_mass_matrix())
+    control = Controller(
+        target_pose=robot.g_star,
+        b_mat=robot.b_mat,
+        joint_speed_limits=robot.arm.joint_speed_limit
+    )
+    while True:
+        
+        jac = robot.get_jacobian
+        q_dot = robot.joint_speeds
+        print(control.compute_gains(jac, q_dot))
     
