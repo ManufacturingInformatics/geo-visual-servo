@@ -1,5 +1,4 @@
 # TODO:
-# - Create Jacobian function
 # - Create PD with GC control!
 
 import os
@@ -27,5 +26,7 @@ if __name__ == "__main__":
         
         jac = robot.get_jacobian
         q_dot = robot.joint_speeds
-        print(control.compute_gains(jac, q_dot))
+       # print(control.compute_gains(jac, q_dot))
+        
+        print(control.geodesic(robot.get_pose, robot.get_mass_matrix, robot.get_jacobian))
     

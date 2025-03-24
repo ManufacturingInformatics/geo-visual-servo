@@ -102,7 +102,7 @@ class Robot:
         Property for the joint speeds, found in rad/s if self.is_radians=True. Converted from list to JAX NumPy array for convenience.
         
         Returns:
-            jnp.ndarray: _description_
+            jnp.ndarray: JAX NumPy array of the joint speeds for the robot, given in rad/s
         """
         return jnp.asarray(self._get_joint_speeds())[0:6].reshape((6,1))
     
@@ -111,8 +111,10 @@ class Robot:
         return self._compute_mass_matrix()
     
     @property
-    def get_pose(self, radians=False) -> jnp.ndarray:
-        return jnp.array(self.arm.get_position(is_radian=radians)[1])
+    def get_pose(self) -> jnp.ndarray:
+        _ = self.get_transforms()
+        self.forward_kinematics()
+        return self.fk
     
     @property
     def get_jacobian(self) -> jnp.ndarray:
@@ -123,10 +125,6 @@ class Robot:
             jnp.ndarray: Jacobian array cast as a JAX NumPy array
         """
         return self._jacobian()
-    
-    @property
-    def geodesic_distance(self, g0, g1):
-        pass
     
     def compute_rotation_matrix(self) -> jnp.ndarray:
         """
@@ -147,7 +145,7 @@ class Robot:
         )
         return rot_mat
     
-    def get_transforms(self):
+    def get_transforms(self) -> jnp.ndarray:
         """
         Computes the numerical joint transforms from the prior joint to the current joint (n-1)T(n)
         """
@@ -158,6 +156,7 @@ class Robot:
                  [sin(qVals[i]+self.dh_params[i][0]), cos(qVals[i]+self.dh_params[i][0])*cos(self.dh_params[i][2]), -cos(qVals[i]+self.dh_params[i][0])*sin(self.dh_params[i][2]), self.dh_params[i][3]*sin(qVals[i]+self.dh_params[i][0])],
                  [0, sin(self.dh_params[i][2]), cos(self.dh_params[i][2]), self.dh_params[i][1]],
                  [0, 0, 0, 1]])
+        return self.transforms
         
     def forward_kinematics(self):
         """

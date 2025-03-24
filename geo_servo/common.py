@@ -8,7 +8,7 @@ def check_psd(mat):
     Values:
         1 :  Matrix is positive definite
         2 : Matrix is positive semi-definite
-        -1 : Matrix is neither definite or semi-definite
+       -1 : Matrix is neither definite or semi-definite
 
     Args:
         mat (jnp.ndarray): JAX NumPy array that is the mass-inertia matrix of the manipulator at a given configuration
@@ -68,5 +68,35 @@ def load_tcp_params() -> dict:
         'cz': float(tcp_cz)
     }
     return tcp_params
+
+def vee_map():
+    pass
+
+def pose_cross_map(pose) -> jnp.ndarray:
+    """
+    Computes the cross map for the pose. Converts from the R^{4x4} to R^{6x6} notation for representing vectors. 
+
+    Args:
+        pose (jnp.ndarray): Pose of the end-effector in SE(3)
+
+    Returns:
+        jnp.ndarray: _description_
+    """
+    R = pose[0:3, 0:3]
+    g_cross = jnp.zeros((6,6))
+    g_cross = g_cross.at[0:3, 0:3].set(R)
+    g_cross = g_cross.at[3:6, 3:6].set(R)
+    return g_cross
+    
+def momenta_cross_map(pose, mass_matrix, jacobian, joint_speeds) -> jnp.ndarray:
+    # TODO - Finish the conjugate momenta cross map
+    j_inv = jnp.linalg.pinv(jacobian)
+    m_bar = j_inv.T @ mass_matrix @ j_inv
+    twist = jacobian @ joint_speeds
+    momenta = m_bar @ twist
+    pass
+
+def hat_map():
+    pass
             
 

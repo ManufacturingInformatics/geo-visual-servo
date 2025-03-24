@@ -3,6 +3,7 @@ import time
 import sys
 import jax.numpy as jnp
 import jax
+from common import pose_cross_map
 
 class Controller:
     
@@ -27,7 +28,7 @@ class Controller:
         assert target_pose.shape == (4,4)
         self.target_pose = target_pose
         
-    def compute_gains(self, jacobian, joint_speeds):
+    def compute_gains(self, jacobian, joint_speeds, pose):
         u_es = 0
         u_di = self._compute_damping_injection(jacobian=jacobian, joint_speeds=joint_speeds)
         u_dc = 0
@@ -40,7 +41,7 @@ class Controller:
         Args:
             pose (jnp.ndarray): Current pose of the manipulator in SE(3)
             mass_matrix (jnp.ndarray): Mass matrix of the manipulator at the current configuration. Normally positive semi-definite.
-            jacobian (_type_): Body Jacobian of the manipulator at the current configuration. 
+            jacobian (jnp.ndarray): Body Jacobian of the manipulator at the current configuration. 
 
         Returns:
             jnp.float64: Returns the metric geodesic distance approximation. 
@@ -57,23 +58,24 @@ class Controller:
         p_1 = self.target_pose[0:3,3]
         
         # Hamiltonian metric tensor
-        m_bar = jacobian.pinv().T @ mass_matrix @ jacobian.pinv()
-        G_hamil =  m_bar.pinv()
+        j_inv = jnp.linalg.pinv(jacobian)
+        m_bar = j_inv.T @ mass_matrix @ j_inv
+        G_hamil =  jnp.linalg.pinv(m_bar)
         
         # Rotation and position differences
-        delta_R = jnp.acos(
-            (jnp.trace(G_hamil @ (R_0.T @ R_1 - jnp.eye(4))) + 2)/2
+        delta_R = jnp.linalg.norm(G_hamil[3:6, 3:6], ord='fro') * jnp.acos(
+             (jnp.trace((R_0.T @ R_1))-1)/2
         )
         delta_p = jnp.linalg.norm(
-            G_hamil @ (p_0 - p_1), ord='fro'
+            G_hamil[0:3, 0:3] @ (p_0 - p_1), ord=None
         )
         return jnp.sqrt(delta_R + delta_p)
     
     def _saturation(self):
         pass
     
-    def _compute_energy_shaping(self):
-        pass
+    def _compute_energy_shaping(self, pose, masses, jacobian, joint_speeds, ):
+        g_cross = pose_cross_map(pose)
     
     def _compute_damping_injection(self, jacobian, joint_speeds):
         """
