@@ -2,5 +2,6 @@ geo-servo/robot.conf
 notebooks/testing.ipynb
 notebooks/cross_maps.ipynb
 notebooks/.jupyter/*
+notebooks/camera_test.py
 notebooks/.ipynb_checkpoints/*
 geo-servo/__pycache__/*
