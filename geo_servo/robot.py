@@ -8,8 +8,9 @@ from sympy import Symbol, Matrix
 import sympy as sy
 
 from xarm.wrapper import XArmAPI
-from common import load_inertia_params, load_tcp_params, check_psd
-from jaxlie import SE3
+from common import load_inertia_params, load_tcp_params, check_psd, vee_map
+
+GRAVITY = 9.81
 
 
 class Robot:
@@ -41,9 +42,8 @@ class Robot:
             weight=self.tcp_params['weight'],
             center_of_gravity=[self.tcp_params['cx'], self.tcp_params['cy'], self.tcp_params['cz']]
         )
-        self.mass_matrix = jnp.zeros((6,6))
-        self.jacobian = jnp.zeros((6,6))
         self.b_mat = jnp.ones((6,1))
+        self.grav_vec = jnp.array([[0, -GRAVITY, 0]]).T
 
         # Zero configurations        
         self.g_0 = jnp.array([[1.0, 0, 0,  2.07386743e-01],
@@ -56,6 +56,9 @@ class Robot:
                                  [-0.00470503, 0.9998352, 0.01753419, 0.31577227],
                                  [0.9999273, 0.00489879, -0.01102217, 0.06060453],
                                  [0., 0., 0., 1.]])
+        
+        # Joint speed limits
+        self.joint_vel_limit = jnp.array([-(jnp.pi)/50, (jnp.pi)/50])
 
         # DH parameters, in order: theta_i(offset), d, alpha, r
         self.dh_params = jnp.array(
@@ -87,6 +90,11 @@ class Robot:
         self.arm.set_state(0)
         
     @property
+    def shutdown(self):
+        self.arm.vc_set_joint_velocity([0,0,0,0,0,0])
+        self.arm.disconnect
+        
+    @property
     def joint_vals(self):
         """
         Property for the joint values, rather than a function. This also casts the joint values as a JAX NumPy array that allows for the useful computation of things. 
@@ -115,6 +123,10 @@ class Robot:
         _ = self.get_transforms()
         self.forward_kinematics()
         return self.fk
+    
+    @property
+    def get_grav_vec(self) -> jnp.ndarray:
+        return self._compute_gravity_matrix()
     
     @property
     def get_jacobian(self) -> jnp.ndarray:
@@ -175,7 +187,7 @@ class Robot:
     
     def _jacobian(self) -> jnp.ndarray:
         """
-        Computes the geometric Jacobian for the current state of the manipulator. Currently the approach, whilst not using the product of twists that it is using in the 
+        Computes the geometric Jacobian for the current state of the manipulator.
 
         Returns:
             jnp.ndarray: _description_
@@ -223,8 +235,50 @@ class Robot:
             np.array(J_eval).astype(np.float64)
         )
     
-    def _geodesic_distance(self):
-        pass    
+    def _compute_gravity_matrix(self) -> jnp.ndarray:
+        """
+        Computes the gravity vector at the current configuration
+
+        Returns:
+            jnp.ndarray: Gravity vector corresponding to the current configuration
+        """
+        qVals = self._get_joints()
+        J = sy.zeros(6,6)
+        G = sy.zeros(6,1)
+        for i in range(0,6):
+            if i == 0:
+                T = Matrix([
+                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
+                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
+                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
+                    [0, 0, 0, 1]
+                ])
+                T_p = T[0:3,3]
+                jV = T_p.jacobian(self.q)
+                G = - jV.T * self.mass[i].item() * self.grav_vec
+            else:
+                T_temp = Matrix([
+                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
+                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
+                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
+                    [0, 0, 0, 1]
+                ])
+                T = T * T_temp
+                T_p = T[0:3,3]
+                jV = T_p.jacobian(self.q)
+                G -= jV.T * self.mass[i].item() * self.grav_vec
+        eval_dict = {
+            self.q[0]: qVals[0],
+            self.q[1]: qVals[1],
+            self.q[2]: qVals[2],
+            self.q[3]: qVals[3],
+            self.q[4]: qVals[4],
+            self.q[5]: qVals[5]
+        }
+        G_eval = G.subs(eval_dict).evalf(n=3)
+        return jnp.array(
+            np.array(G_eval).astype(np.float64)
+        )
                 
     def _compute_mass_matrix(self) -> jnp.ndarray:
         """

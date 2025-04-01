@@ -3,7 +3,9 @@ import time
 import sys
 import jax.numpy as jnp
 import jax
-from common import pose_cross_map
+from common import pose_cross_map, momenta_cross_map, vee_map
+from common import Saturation
+from robot import Robot
 
 class Controller:
     
@@ -22,17 +24,19 @@ class Controller:
         
         # Matrix parameters from the system
         self.b_mat = b_mat
-        self.min_joint_speed, self.max_joint_speed = joint_speed_limits # in rad/s
+        self.joint_speed_limits = joint_speed_limits # in rad/s
+        self.saturation = Saturation(self.joint_speed_limits[0], self.joint_speed_limits[1])
         
         # Target parameters
         assert target_pose.shape == (4,4)
         self.target_pose = target_pose
         
-    def compute_gains(self, jacobian, joint_speeds, pose):
-        u_es = 0
+    def compute_gains(self, jacobian, joint_speeds, pose, robot):
+        u_es = self._compute_energy_shaping(pose=pose, jacobian=jacobian, joint_speeds=joint_speeds, robot=robot)
         u_di = self._compute_damping_injection(jacobian=jacobian, joint_speeds=joint_speeds)
         u_dc = 0
-        return u_es + u_di + u_dc
+        u = u_es + u_di + u_dc
+        return self._saturation(u)
     
     def geodesic(self, pose, mass_matrix, jacobian) -> jnp.float64:
         """
@@ -55,7 +59,7 @@ class Controller:
         
         # Extract positions
         p_0 = pose[0:3, 3]
-        p_1 = self.target_pose[0:3,3]
+        p_1 = self.target_pose[0:3,-1]
         
         # Hamiltonian metric tensor
         j_inv = jnp.linalg.pinv(jacobian)
@@ -71,11 +75,49 @@ class Controller:
         )
         return jnp.sqrt(delta_R + delta_p)
     
-    def _saturation(self):
-        pass
+    def _saturation(self, u) -> jnp.ndarray:
+        """
+        Saturates the control inputs to within the joint speed limits
+
+        Args:
+            u (jnp.nda]): Raw input provided by the controller algorithm
+
+        Returns:
+            jnp.ndarray: Saturated array of inputs
+        """
+        for i in range(0,6):
+            u = u.at[i].set(self.saturation.saturate(u[i].item()))
+        return u
     
-    def _compute_energy_shaping(self, pose, masses, jacobian, joint_speeds, ):
+    def _compute_energy_shaping(self, 
+                                pose: jnp.ndarray, 
+                                jacobian: jnp.ndarray, 
+                                joint_speeds: jnp.ndarray,
+                                robot: Robot) -> jnp.ndarray:
+        """
+        Compute the energy shaping gain for the manipulator
+
+        Args:
+            pose (jnp.ndarray): Pose in SE(3) of the end-effector
+            jacobian (jnp.ndarray): Body Jacobian at the current configuration
+            joint_speeds (jnp.ndarray): Joint speeds of the manipulator
+            robot (Robot): Robot class for mass and gravity matrices
+
+        Returns:
+            jnp.ndarray: Energy shaping input for the controller
+        """
         g_cross = pose_cross_map(pose)
+        m_cross = momenta_cross_map(robot.get_mass_matrix, jacobian, joint_speeds)
+        error = jnp.zeros((6,1))
+        twists = jacobian @ joint_speeds
+        R = pose[0:3,0:3]
+        p = pose[0:3,-1].reshape(3,1)
+        print(R, p)
+        e_temp = self.target_pose[0:3,0:3].T @ R - R.T @ self.target_pose[0:3,0:3]
+        error = error.at[0:3].set(R.T @ self.Kp @ (p - self.target_pose[0:3,-1].reshape((3,1))))
+        error = error.at[3:6].set(0.5 * self.Kr @ vee_map(e_temp))
+        G_vec = robot.get_grav_vec
+        return g_cross @ G_vec - m_cross @ twists - error
     
     def _compute_damping_injection(self, jacobian, joint_speeds):
         """
