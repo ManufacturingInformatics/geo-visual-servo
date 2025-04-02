@@ -32,6 +32,18 @@ class Controller:
         self.target_pose = target_pose
         
     def compute_gains(self, jacobian, joint_speeds, pose, robot):
+        """
+        This function computes the controller inputs in terms of the velocity controller for the manipulator. 
+
+        Args:
+            jacobian (jnp.ndarray): Geometric body Jacobian of the manipulator at the current configuration
+            joint_speeds (jnp.ndarray): Joint speeds of the manipulator in rad/s
+            pose (jnp.ndarray): End-effector pose of the manipulator in SE(3)
+            robot (Robot): Robot class instatiated for getting the gravity vectors
+
+        Returns:
+            _type_: _description_
+        """
         u_es = self._compute_energy_shaping(pose=pose, jacobian=jacobian, joint_speeds=joint_speeds, robot=robot)
         u_di = self._compute_damping_injection(jacobian=jacobian, joint_speeds=joint_speeds)
         u_dc = 0

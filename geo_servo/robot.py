@@ -12,7 +12,6 @@ from common import load_inertia_params, load_tcp_params, check_psd, vee_map
 
 GRAVITY = 9.81
 
-
 class Robot:
     
     def __init__(self, ip, motion_enable=True, set_mode=0, is_radian=True):
