@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+from se3 import SE3
 
 class Kinematics:
     
@@ -26,6 +27,16 @@ class Kinematics:
         
         # Transformation matrices
         self.transforms = jnp.zeros((6,4,4))
+        self.B = jnp.array( #TODO: Check the +/- values for each rotation and position velocity
+            [[0, 0, 0, 0, 0, 0],
+             [0, 1, 1, 0, 1, 0],
+             [1, 0, 0, 1, 0, 1],
+             [0, 0.155, 0.4395, 0, 0.097, 0],
+             [0.207, 0, 0, 0.076, 0, 0],
+             [0, 0.207, 0.1535, 0, 0.076, 0]]
+        )
+        # Need the zero configuration
+        self.g_0 = jnp.zeros((4,4)) #TODO: Add the actual zero pose of the manipulator. 
         
     def get_pose_dh(self, qVals: jnp.ndarray) -> jnp.ndarray:
         """
@@ -47,4 +58,24 @@ class Kinematics:
         for i in range(1,6):
             temp_fk = temp_fk @ self.transforms[i]    
         return temp_fk
+    
+    def fk_body(self, qVals: jnp.ndarray) -> jnp.ndarray:
+        """
+        Computes the forward kinematics as a product of exponentials (twists) in the body (end-effector) framer
+
+        Args:
+            qVals (jnp.ndarray): _description_
+
+        Returns:
+            jnp.ndarray: _description_
+        """
+        assert M.shape == (4,4)
+        T = jnp.array(M)
+        for i, b in enumerate(B):
+            b_skew = SE3.vec6_to_skew4(jnp.array(b) * qVals[i].item())
+            mat_exp = SE3.skew4_to_matrix_exp4(b_skew)
+            T = T @ mat_exp
+            
+        fk = jnp.round(jnp.where(SE3.near_zero(T), 0, T), 4)
+        return fk
         
