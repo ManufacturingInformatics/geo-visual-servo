@@ -43,12 +43,6 @@ class Robot:
         )
         self.b_mat = jnp.ones((6,1))
         self.grav_vec = jnp.array([[0, -GRAVITY, 0]]).T
-
-        # Zero configurations        
-        self.g_0 = jnp.array([[1.0, 0, 0,  2.07386743e-01],
-                            [0, -1.0, 0, 0],
-                            [0, 0, -1.0, 1.11026153e-01],
-                            [0, 0, 0, 1.0]])
         
         # Target pose
         self.g_star = jnp.array([[-0.01110625, 0.01748104, -0.99978554, -0.29364628],
