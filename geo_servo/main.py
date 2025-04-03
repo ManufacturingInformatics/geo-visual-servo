@@ -1,3 +1,8 @@
+"""
+TODO:
+- Update the mass and gravity computations to use the body Jacobian
+- Test control law
+"""
 import os
 import time
 import sys
@@ -6,11 +11,15 @@ import jax.numpy as jnp
 from robot import Robot
 from controller import Controller
 from common import check_psd
+from se3 import SE3
+
+N_LIM = 1
 
 if __name__ == "__main__":
     
-    Kp = jnp.diag(jnp.array([5, 5, 2]))
-    Kr = jnp.diag(jnp.array([5, 5, 2]))
+    Kp = 5*jnp.eye(3)
+    Kr = 5*jnp.eye(3)
+    Kd = 0.5*jnp.eye(6)
     
     parser = ConfigParser()
     parser.read('./config/robot.conf')
@@ -22,21 +31,31 @@ if __name__ == "__main__":
         b_mat=robot.b_mat,
         joint_speed_limits=robot.joint_vel_limit,
         Kp=Kp,
-        Kr=Kr
+        Kr=Kr,
+        Kd=Kd
     )
-    print(robot.dh_params)
+    
+    se3 = SE3()
     
     count = 0
-    while count < 10:
+    while True:
         count += 1
         
-        jac = robot.get_jacobian
-        q_dot = robot.joint_speeds
+        # q_dot = robot.joint_speeds
+        
+        qVals = robot.joint_vals
         pose = robot.get_pose
-        robot_input = []
-        u = control.compute_gains(jac, q_dot, pose, robot)
-        for i in range(0,6):
-            robot_input.append(u[i].item())
+        jac = jac = robot.get_jacobian
+        print(jnp.round(jnp.where(se3.near_zero(z=pose), 0, pose), 4))
+        # print(jnp.round(jnp.where(se3.near_zero(z=jac), 0, jac), 4))
+        ee_twist = jac @ robot.joint_speeds
+        print(jnp.round(jnp.where(se3.near_zero(z=ee_twist), 0, ee_twist), 4))
+        
+        
+        # robot_input = []
+        # u = control.compute_gains(jac, q_dot, pose, robot)
+        # for i in range(0,6):
+        #     robot_input.append(u[i].item())
         # print(robot_input)
         
         # ONLY ENABLE THIS COMMAND WHEN IT WORKS

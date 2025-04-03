@@ -14,8 +14,8 @@ class SE3:
             jnp.ndarray: _description_
         """
         assert p.shape == (1,6)
-        omega = s[0:3]
-        v = s[3:]
+        omega = p[:,0:3]
+        v = p[:,3:]
         p_sk = self.hat_map(omega)
         twist_sk = jnp.r_[jnp.c_[p_sk, v.reshape(3,1)], [[0,0,0,0]]]
         return twist_sk
@@ -38,15 +38,15 @@ class SE3:
         matexp3 = self.skew3_to_matrix_exp3(omegatheta_sk)
         G = jnp.eye(3)*theta + (1 - jnp.cos(theta))*omega_sk + (theta - jnp.sin(theta)) * jnp.dot(omega_sk, omega_sk)
         v = jnp.dot(G, vtheta)/theta
-        matexp4 = jnp.r_[np.c_[matexp3, v], [[0, 0, 0, 1]]]
+        matexp4 = jnp.r_[jnp.c_[matexp3, v], [[0, 0, 0, 1]]]
         return matexp4
 
     def skew3_to_matrix_exp3(self, p_sk: jnp.ndarray) -> jnp.ndarray:
 
-        ptheta = self.skew3_to_vec3(p_sk) # exponential coordinates OmegaTheta
+        ptheta = self.vee_map(p_sk) # exponential coordinates OmegaTheta
         theta = self.axis_angle(ptheta)[1]
         p_sk_pure = p_sk / theta
-        mat_exp = jnp.array(np.eye(3) + jnp.sin(theta) * p_sk_pure + (1 - jnp.cos(theta)) * (p_sk_pure @ p_sk_pure))
+        mat_exp = jnp.array(jnp.eye(3) + jnp.sin(theta) * p_sk_pure + (1 - jnp.cos(theta)) * (p_sk_pure @ p_sk_pure))
         res = jnp.where(self.near_zero(mat_exp), 0, mat_exp)
         return res
         
@@ -103,8 +103,19 @@ class SE3:
         Returns:
             jnp.ndarray: _description_
         """
-        return p / np.linalg.norm(p), np.linalg.norm(p)
+        return p / jnp.linalg.norm(p), jnp.linalg.norm(p)
     
+    def adj(self, T: jnp.ndarray) -> jnp.ndarray:
+        """ Computes the 6X6 skew symmetric adjoint representation of a 4x4 transformation matrix T
+        :param T: 4x4 homogeneous transformation matrix in SE(3)
+        :return adj_T : 6x6 adjoint representation of T
+        """
+        assert T.shape == (4,4)
+        R = T[0:3, 0:3]
+        p = T[0:3, 3].reshape((1,3))
+        p_sk = self.hat_map(p)
+        return jnp.r_[jnp.c_[R, jnp.zeros((3, 3))], jnp.c_[p_sk @ R, R]]
+
     def rot2RPY(self, R: jnp.ndarray) -> jnp.ndarray:
         #TODO: Add a function to convert from rotation matrix to RPY values. 
         pass

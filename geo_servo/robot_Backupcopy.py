@@ -125,8 +125,9 @@ class Robot:
     
     @property
     def get_pose(self) -> jnp.ndarray:
-        qVals = self.joint_vals
-        return self.kinematics.fk_body(qVals)
+        _ = self.get_transforms()
+        self.forward_kinematics()
+        return self.fk
     
     @property
     def get_grav_vec(self) -> jnp.ndarray:
@@ -140,8 +141,7 @@ class Robot:
         Returns:
             jnp.ndarray: Jacobian array cast as a JAX NumPy array
         """
-        qVals = self.joint_vals
-        return self.kinematics.jacobian_body(qVals)
+        return self._jacobian()
     
     def compute_rotation_matrix(self) -> jnp.ndarray:
         """
@@ -184,7 +184,7 @@ class Robot:
             temp_fk = temp_fk @ self.transforms[i]
         self.fk = temp_fk
         
-    def _get_joints(self, is_radian=True) -> list:
+    def _get_joints(self, is_radian=False) -> list:
         return self.arm.get_joint_states(is_radian=is_radian)[1][0]
     
     def _get_joint_speeds(self):

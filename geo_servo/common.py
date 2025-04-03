@@ -16,6 +16,17 @@ class Saturation:
                 return self.low
             else:
                 return self.high
+            
+def deg2rad(vals):
+    """
+    Degrees to radians converter
+
+    Args:
+        vals: Values in degrees
+
+    Returns: Values in radians
+    """
+    return (vals * jnp.pi)/180
 
 def check_psd(mat):
     """

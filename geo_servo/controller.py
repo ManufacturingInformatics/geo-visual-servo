@@ -124,7 +124,7 @@ class Controller:
         twists = jacobian @ joint_speeds
         R = pose[0:3,0:3]
         p = pose[0:3,-1].reshape(3,1)
-        print(R, p)
+        # print(R, p)
         e_temp = self.target_pose[0:3,0:3].T @ R - R.T @ self.target_pose[0:3,0:3]
         error = error.at[0:3].set(R.T @ self.Kp @ (p - self.target_pose[0:3,-1].reshape((3,1))))
         error = error.at[3:6].set(0.5 * self.Kr @ vee_map(e_temp))
