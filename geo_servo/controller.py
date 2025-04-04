@@ -48,7 +48,7 @@ class Controller:
         u_di = self._compute_damping_injection(jacobian=jacobian, joint_speeds=joint_speeds)
         u_dc = 0
         u = u_es + u_di + u_dc
-        return self._saturation(u)
+        return u
     
     def geodesic(self, pose, mass_matrix, jacobian) -> jnp.float64:
         """
@@ -87,7 +87,7 @@ class Controller:
         )
         return jnp.sqrt(delta_R + delta_p)
     
-    def _saturation(self, u) -> jnp.ndarray:
+    def saturate(self, u) -> jnp.ndarray:
         """
         Saturates the control inputs to within the joint speed limits
 
@@ -119,7 +119,9 @@ class Controller:
             jnp.ndarray: Energy shaping input for the controller
         """
         g_cross = pose_cross_map(pose)
+        print(f"g_cross = {g_cross}")
         m_cross = momenta_cross_map(robot.get_mass_matrix, jacobian, joint_speeds)
+        print(f"m_cross = {m_cross}")
         error = jnp.zeros((6,1))
         twists = jacobian @ joint_speeds
         R = pose[0:3,0:3]
@@ -128,8 +130,10 @@ class Controller:
         e_temp = self.target_pose[0:3,0:3].T @ R - R.T @ self.target_pose[0:3,0:3]
         error = error.at[0:3].set(R.T @ self.Kp @ (p - self.target_pose[0:3,-1].reshape((3,1))))
         error = error.at[3:6].set(0.5 * self.Kr @ vee_map(e_temp))
+        print(f"Error = {error}")
         G_vec = robot.get_grav_vec
-        return g_cross @ G_vec - m_cross @ twists - error
+        print(f"Gravity vector = {G_vec}")
+        return g_cross.T @ G_vec - m_cross @ twists - error
     
     def _compute_damping_injection(self, jacobian, joint_speeds):
         """

@@ -88,7 +88,7 @@ class Kinematics:
             T = T @ mat_exp
 
             adj_T = self.se3.adj(T)
-            J_col = jnp.dot(adj_T, B_list[i, :])
+            J_col = adj_T @ B_list[i, :]
             J_b = J_b.at[:,i].set(J_col)
         return J_b
     

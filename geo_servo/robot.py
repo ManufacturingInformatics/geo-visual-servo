@@ -6,6 +6,7 @@ import numpy as np # I don't want to use this, but it is necessary for now
 from math import sin, cos
 from sympy import Symbol, Matrix
 import sympy as sy
+from se3 import SE3
 
 from xarm.wrapper import XArmAPI
 from common import load_inertia_params, load_tcp_params, check_psd, vee_map, deg2rad
@@ -34,8 +35,6 @@ class Robot:
         self._0theta2 = -1.385 # in radians
         self._0theta3 = 1.385 # in radians
         
-        self.rot_axis = [2, 1, 1, 2, 1, 2]
-        
         # Dynamics parameters
         self.tcp_params = load_tcp_params()
         self.arm.set_tcp_load(
@@ -46,13 +45,18 @@ class Robot:
         self.grav_vec = jnp.array([[0, -GRAVITY, 0]]).T
         
         # Target pose
-        self.g_star = jnp.array([[-0.01110625, 0.01748104, -0.99978554, -0.29364628],
-                                 [-0.00470503, 0.9998352, 0.01753419, 0.31577227],
-                                 [0.9999273, 0.00489879, -0.01102217, 0.06060453],
-                                 [0., 0., 0., 1.]])
+        self.g_star = jnp.array([
+            [0.0114, 0.0728, -0.99729997, -0.2703],
+            [0.0139, 0.99719995, 0.0729, 0.3126],
+            [0.99979997, -0.0147, 0.0104, 0.0386],
+            [0, 0, 0, 1]])
+        # [[-0.01110625, 0.01748104, -0.99978554, -0.29364628],
+        # [-0.00470503, 0.9998352, 0.01753419, 0.31577227],
+        # [0.9999273, 0.00489879, -0.01102217, 0.06060453],
+        # [0., 0., 0., 1.]]
         
         # Joint speed limits
-        self.joint_vel_limit = jnp.array([-(jnp.pi)/50, (jnp.pi)/50])
+        self.joint_vel_limit = jnp.array([-(jnp.pi)/20, (jnp.pi)/20])
 
         # DH parameters, in order: theta_i(offset), d, alpha, r
         self.dh_params = jnp.array(
@@ -84,17 +88,13 @@ class Robot:
         self.q = Matrix([self._q0, self._q1, self._q2, self._q3, self._q4, self._q5])
         
         # Kinematics initialisation
-        self.transforms = jnp.zeros((6,4,4))
-        self.get_transforms()
-        self.fk = jnp.zeros((4,4))
-        self.forward_kinematics()
         self.kinematics = Kinematics()
         
         # Initialise the robot to get it ready for velocity control mode
-        self.arm.set_mode(mode=4)
+        self.arm.set_mode(mode=4) # 4 for joint control, 5 for cartesian control
         self.arm.set_state(0)
+        self.se3 = SE3()
         
-    @property
     def shutdown(self):
         self.arm.vc_set_joint_velocity([0,0,0,0,0,0])
         self.arm.disconnect
@@ -161,19 +161,6 @@ class Robot:
              [-sin(pitch), sin(roll)*cos(pitch), cos(roll)*cos(pitch)]]
         )
         return rot_mat
-    
-    def get_transforms(self) -> jnp.ndarray:
-        """
-        Computes the numerical joint transforms from the prior joint to the current joint (n-1)T(n)
-        """
-        qVals = self.arm.get_joint_states(is_radian=True)[1][0]
-        for i in range(0, 6):
-            self.transforms = self.transforms.at[i].set(
-                [[cos(qVals[i]+self.dh_params[i][0]), -sin(qVals[i]+self.dh_params[i][0])*cos(self.dh_params[i][2]), sin(qVals[i]+self.dh_params[i][0])*sin(self.dh_params[i][2]), self.dh_params[i][3]*cos(qVals[i]+self.dh_params[i][0])],
-                 [sin(qVals[i]+self.dh_params[i][0]), cos(qVals[i]+self.dh_params[i][0])*cos(self.dh_params[i][2]), -cos(qVals[i]+self.dh_params[i][0])*sin(self.dh_params[i][2]), self.dh_params[i][3]*sin(qVals[i]+self.dh_params[i][0])],
-                 [0, sin(self.dh_params[i][2]), cos(self.dh_params[i][2]), self.dh_params[i][1]],
-                 [0, 0, 0, 1]])
-        return self.transforms
         
     def forward_kinematics(self):
         """
@@ -190,56 +177,6 @@ class Robot:
     def _get_joint_speeds(self):
         return self.arm.realtime_joint_speeds
     
-    def _jacobian(self) -> jnp.ndarray:
-        """
-        Computes the geometric Jacobian for the current state of the manipulator.
-
-        Returns:
-            jnp.ndarray: _description_
-        """
-        qVals = self._get_joints()
-        J = sy.zeros(6,6)
-        
-        for i in range(0, 6):
-            if i == 0:
-                T = Matrix([
-                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
-                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
-                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
-                    [0, 0, 0, 1]
-                ])
-                T_p = T[0:3,3]
-                jV = T_p.jacobian(self.q)
-                jW = Matrix([[T[0:3,self.rot_axis[i]]]])
-                J[0:3,:] = jV
-                J[3:6,i] = jW
-            else:
-                T_temp = Matrix([
-                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
-                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
-                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
-                    [0, 0, 0, 1]
-                ])
-                T = T * T_temp
-                T_p = T[0:3,3]
-                jV = T_p.jacobian(self.q)
-                jW = Matrix([[T[0:3,self.rot_axis[i]]]])
-                J[0:3,:] = jV
-                J[3:6,i] = jW
-                
-        eval_dict = {
-            self.q[0]: qVals[0],
-            self.q[1]: qVals[1],
-            self.q[2]: qVals[2],
-            self.q[3]: qVals[3],
-            self.q[4]: qVals[4],
-            self.q[5]: qVals[5]
-        }
-        J_eval = J.subs(eval_dict).evalf(n=3)
-        return jnp.array(
-            np.array(J_eval).astype(np.float64)
-        )
-    
     def _compute_gravity_matrix(self) -> jnp.ndarray:
         """
         Computes the gravity vector at the current configuration
@@ -247,94 +184,51 @@ class Robot:
         Returns:
             jnp.ndarray: Gravity vector corresponding to the current configuration
         """
-        qVals = self._get_joints()
-        J = sy.zeros(6,6)
-        G = sy.zeros(6,1)
-        for i in range(0,6):
-            if i == 0:
-                T = Matrix([
-                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
-                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
-                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
-                    [0, 0, 0, 1]
-                ])
-                T_p = T[0:3,3]
-                jV = T_p.jacobian(self.q)
-                G = - jV.T * self.mass[i].item() * self.grav_vec
-            else:
-                T_temp = Matrix([
-                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
-                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
-                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
-                    [0, 0, 0, 1]
-                ])
-                T = T * T_temp
-                T_p = T[0:3,3]
-                jV = T_p.jacobian(self.q)
-                G -= jV.T * self.mass[i].item() * self.grav_vec
-        eval_dict = {
-            self.q[0]: qVals[0],
-            self.q[1]: qVals[1],
-            self.q[2]: qVals[2],
-            self.q[3]: qVals[3],
-            self.q[4]: qVals[4],
-            self.q[5]: qVals[5]
-        }
-        G_eval = G.subs(eval_dict).evalf(n=3)
-        return jnp.array(
-            np.array(G_eval).astype(np.float64)
-        )
+        qVals = self.joint_vals
+        B_list = jnp.array(self.kinematics.B)
+        J_b = jnp.array(self.kinematics.B.T).copy().astype(float)
+        T = jnp.eye(4)
+        G = jnp.zeros((6,1))
+        for i in range(qVals.shape[0]-2, -1,-1):
+            
+            b = B_list[i+1,:]
+            b_skew = self.se3.vec6_to_skew4(jnp.array(b*-qVals[i+1]).reshape((1,6)))
+            mat_exp = self.se3.skew4_to_matrix_exp4(b_skew)
+            T = T @ mat_exp
+            
+            adj_T = self.se3.adj(T)
+            J_col = adj_T @ B_list[i,:]
+            J_b = J_b.at[:,i].set(J_col)
+            J_bv = J_b[0:3,:]
+            G -= J_bv.T @ (self.mass[i].item() * self.grav_vec)
+            
+        return jnp.round(jnp.where(self.se3.near_zero(G), 0, G), 4)
                 
     def _compute_mass_matrix(self) -> jnp.ndarray:
         """
-        Computes the mass-inertia matrix for the manipulator at the current configuration. This function uses SymPy to compute the symbolic Jacobian and then the mass matrix for each joint. Note that this differs from the standard Jacobian function, which only calculates the full-body Jacobian. 
+        Computes the mass-inertia matrix for the manipulator at the current configuration.
 
         Returns:
-            jnp.ndarray: JAX NumPy array converted from the symbolic representation
+            jnp.ndarray: JAX NumPy array of the mass matrix in Jacobian form
         """
-        qVals = self._get_joints()
-        J = sy.zeros(6,6)
-        M = sy.zeros(6,6)
-
-        for i in range(0, 6):
-            if i == 0:
-                T = Matrix([
-                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
-                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
-                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
-                    [0, 0, 0, 1]
-                ])
-                T_p = T[0:3,3]
-                jV = T_p.jacobian(self.q)
-                jW = Matrix([[T[0:3,self.rot_axis[i]]]])
-                J[0:3,:] = jV
-                J[3:6,i] = jW
-                M = self.mass[i].item()*jV.T*jV + J[3:6,:].T*Matrix(self.inertia[i])*J[3:6,:]
-            else:
-                T_temp = Matrix([
-                    [sy.cos(self.q[i]+self.dh_params[i][0].item()), -sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), sy.sin(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.cos(self.q[i]+self.dh_params[i][0].item())],
-                    [sy.sin(self.q[i]+self.dh_params[i][0].item()), sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.cos(self.dh_params[i][2].item()), -sy.cos(self.q[i]+self.dh_params[i][0].item())*sy.sin(self.dh_params[i][2].item()), self.dh_params[i][3].item()*sy.sin(self.q[i]+self.dh_params[i][0].item())],
-                    [0, sy.sin(self.dh_params[i][2].item()), sy.cos(self.dh_params[i][2].item()), self.dh_params[i][1].item()],
-                    [0, 0, 0, 1]
-                ])
-                T = T * T_temp
-                T_p = T[0:3,3]
-                jV = T_p.jacobian(self.q)
-                jW = Matrix([[T[0:3,self.rot_axis[i]]]])
-                J[0:3,:] = jV
-                J[3:6,i] = jW
-                M = self.mass[i].item()*jV.T*jV + J[3:6,:].T*Matrix(self.inertia[i])*J[3:6,:]
-                
-        eval_dict = {
-            self.q[0]: qVals[0],
-            self.q[1]: qVals[1],
-            self.q[2]: qVals[2],
-            self.q[3]: qVals[3],
-            self.q[4]: qVals[4],
-            self.q[5]: qVals[5]
-        }
-        M_eval = M.subs(eval_dict).evalf(n=3).applyfunc(lambda i: 0 if -1e-3<i<1e-3 else i)
-        return jnp.diag(jnp.diagonal(jnp.array(
-            np.array(M_eval).astype(np.float64)
-        )))
+        qVals = self.joint_vals
+        B_list = jnp.array(self.kinematics.B)
+        J_b = jnp.array(self.kinematics.B.T).copy().astype(float)
+        T = jnp.eye(4)
+        M = jnp.zeros((6,6))
+        for i in range(qVals.shape[0]-2, -1,-1):
+            
+            b = B_list[i+1,:]
+            b_skew = self.se3.vec6_to_skew4(jnp.array(b*-qVals[i+1]).reshape((1,6)))
+            mat_exp = self.se3.skew4_to_matrix_exp4(b_skew)
+            T = T @ mat_exp
+            
+            adj_T = self.se3.adj(T)
+            J_col = adj_T @ B_list[i,:]
+            J_b = J_b.at[:,i].set(J_col)
+            J_bv = J_b[0:3,:]
+            J_bw = J_b[3:,:]
+            M = M + self.mass[i].item() * (J_bv.T @ J_bv) + (J_bw.T @ self.inertia[i] @ J_bw)
+            
+        return jnp.round(jnp.where(self.se3.near_zero(M), 0, M), 4)
         
