@@ -81,7 +81,7 @@ class SE3:
         ])
         return x_hat
     
-    def near_zero(self, z: float) -> bool:
+    def near_zero(self, z: float, f:float =1e-6 ) -> bool:
         """
         Checks to see if the absolute value of 
 
@@ -91,7 +91,7 @@ class SE3:
         Returns:
             bool: Boolean corresponding to whether the value is small enough to be rounded. 
         """
-        return abs(z) < 1e-6
+        return abs(z) < f
     
     def axis_angle(self, p: jnp.ndarray) -> jnp.ndarray:
         """

@@ -10,16 +10,16 @@ from configparser import ConfigParser
 import jax.numpy as jnp
 from robot import Robot
 from controller import Controller
-from common import check_psd
+from common import check_psd, deg2rad
 from se3 import SE3
 
-N_LIM = 1
+N_LIM = 100
 
 if __name__ == "__main__":
     
-    Kp = 0.8*jnp.eye(3)
-    Kr = 0.7*jnp.eye(3)
-    Kd = 0.1*jnp.eye(6)
+    Kp = 500*jnp.eye(3)
+    Kr = jnp.eye(3)
+    Kd = jnp.eye(6)
     
     parser = ConfigParser()
     parser.read('./config/robot.conf')
@@ -50,26 +50,28 @@ if __name__ == "__main__":
             jac = jac = robot.get_jacobian
             M = robot.get_mass_matrix
             
-            print(f"q_dot = {q_dot}")
-            print(f"q = {qVals}")
-            print(f"Pose = {pose}")
-            print(f"Target pose = {control.target_pose}")
-            print(f"Mass matrix = {M}")
-            
             control_gains = jnp.zeros((6,1))
             robot_input = []
             u = control.compute_gains(jac, q_dot, pose, robot)
             for i in range(0,6):
                 control_gains = control_gains.at[i].set((u[i].item()))
-            print(f"Control gains = {control_gains}")
-            print(f"Non-saturated = {jnp.linalg.pinv(jac) @ control_gains}")
-            q_set = control.saturate(jnp.linalg.pinv(jac) @ control_gains)
-            
+            # print(f"Control gains = {control_gains.T}") # jnp.linalg.pinv(jac) @ 
+            q_target = control_gains
+            # print(f"Inverted = {jnp.linalg.pinv(jac) @ deg2rad(control_gains)}")
+            q_sat = jnp.round(jnp.where(se3.near_zero(q_target, 1e-3), 0, q_target), 2) #control.saturate(
+            # print(q_sat)
+            print(f"Cartesian Set Velocity (Body frame): {q_sat.T}")
             for i in range(0,6):
-                robot_input.append(q_set[i].item())
+                robot_input.append(q_sat[i].item())
             # ONLY ENABLE THIS COMMAND WHEN IT WORKS
-            print(robot_input)
+            # print(robot_input)
             # robot.arm.vc_set_joint_velocity(robot_input, is_radian=True)
+            code = robot.arm.vc_set_cartesian_velocity(robot_input, is_radian=True, is_tool_coord=True)
+            
+            # print(code)
+            
+            geo = control.geodesic(pose, M, jac)
+            print(f"Geodesic: {geo}")
             
             t1 = time.time()
             loop = t1-t0
@@ -78,6 +80,8 @@ if __name__ == "__main__":
             # time.sleep(0.1)
     finally:
         print("Shutting down robot")
+        final_geo = control.geodesic(pose, M, jac)
+        print(f"Final Geodesic: {final_geo}")
         robot.shutdown()
     
     ave_loop = sum(loop_times)/len(loop_times)

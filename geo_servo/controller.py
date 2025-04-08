@@ -1,3 +1,8 @@
+"""
+Notes:
+- The control gains seem to be coming out funny, the order needs to be remapped to:
+[]
+"""
 import os
 import time
 import sys
@@ -48,7 +53,7 @@ class Controller:
         u_di = self._compute_damping_injection(jacobian=jacobian, joint_speeds=joint_speeds)
         u_dc = 0
         u = u_es + u_di + u_dc
-        return u
+        return jnp.round(jnp.where(robot.se3.near_zero(u, 1e-4), 0, u), 4)
     
     def geodesic(self, pose, mass_matrix, jacobian) -> jnp.float64:
         """
@@ -119,21 +124,17 @@ class Controller:
             jnp.ndarray: Energy shaping input for the controller
         """
         g_cross = pose_cross_map(pose)
-        print(f"g_cross = {g_cross}")
         m_cross = momenta_cross_map(robot.get_mass_matrix, jacobian, joint_speeds)
-        print(f"m_cross = {m_cross}")
         error = jnp.zeros((6,1))
         twists = jacobian @ joint_speeds
         R = pose[0:3,0:3]
         p = pose[0:3,-1].reshape(3,1)
-        # print(R, p)
         e_temp = self.target_pose[0:3,0:3].T @ R - R.T @ self.target_pose[0:3,0:3]
         error = error.at[0:3].set(R.T @ self.Kp @ (p - self.target_pose[0:3,-1].reshape((3,1))))
         error = error.at[3:6].set(0.5 * self.Kr @ vee_map(e_temp))
-        print(f"Error = {error}")
-        G_vec = robot.get_grav_vec # This needs to be multiplied by jnp.linalg.pinv(jacobian).T
-        print(f"Gravity vector = {G_vec}")
-        return g_cross.T @ G_vec - m_cross @ twists - error
+        error = jnp.round(jnp.where(robot.se3.near_zero(error, 1e-3), 0, error), 4)
+        G_vec = jnp.linalg.pinv(jacobian).T @ robot.get_grav_vec 
+        return -m_cross @ twists - error # g_cross.T @ G_vec 
     
     def _compute_damping_injection(self, jacobian, joint_speeds):
         """

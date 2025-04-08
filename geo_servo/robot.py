@@ -91,12 +91,12 @@ class Robot:
         self.kinematics = Kinematics()
         
         # Initialise the robot to get it ready for velocity control mode
-        self.arm.set_mode(mode=4) # 4 for joint control, 5 for cartesian control
+        self.arm.set_mode(mode=5) # 4 for joint control, 5 for cartesian control
         self.arm.set_state(0)
         self.se3 = SE3()
         
     def shutdown(self):
-        self.arm.vc_set_joint_velocity([0,0,0,0,0,0])
+        self.arm.vc_set_cartesian_velocity([0,0,0,0,0,0])
         self.arm.disconnect
         
     @property
