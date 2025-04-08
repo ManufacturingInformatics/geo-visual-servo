@@ -127,7 +127,8 @@ def pose_cross_map(pose) -> jnp.ndarray:
     g_cross = g_cross.at[3:6, 3:6].set(R)
     return g_cross
     
-def momenta_cross_map(mass_matrix: jnp.ndarray, jacobian: jnp.ndarray, joint_speeds: jnp.ndarray) -> jnp.ndarray:
+def momenta_cross_map(mass_matrix: jn
+                      .ndarray, jacobian: jnp.ndarray, joint_speeds: jnp.ndarray) -> jnp.ndarray:
     """
     Computes the cross map of the conjugate momenta. 
 

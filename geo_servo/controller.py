@@ -131,7 +131,7 @@ class Controller:
         error = error.at[0:3].set(R.T @ self.Kp @ (p - self.target_pose[0:3,-1].reshape((3,1))))
         error = error.at[3:6].set(0.5 * self.Kr @ vee_map(e_temp))
         print(f"Error = {error}")
-        G_vec = robot.get_grav_vec
+        G_vec = robot.get_grav_vec # This needs to be multiplied by jnp.linalg.pinv(jacobian).T
         print(f"Gravity vector = {G_vec}")
         return g_cross.T @ G_vec - m_cross @ twists - error
     
