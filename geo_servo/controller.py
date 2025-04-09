@@ -1,8 +1,3 @@
-"""
-Notes:
-- The control gains seem to be coming out funny, the order needs to be remapped to:
-[]
-"""
 import os
 import time
 import sys

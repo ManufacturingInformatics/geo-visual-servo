@@ -4,8 +4,6 @@ import sys
 import jax.numpy as jnp
 import numpy as np # I don't want to use this, but it is necessary for now
 from math import sin, cos
-from sympy import Symbol, Matrix
-import sympy as sy
 from se3 import SE3
 
 from xarm.wrapper import XArmAPI
@@ -77,15 +75,6 @@ class Robot:
              [-jnp.pi/2, self.l5, 0, 0],
              [0, 0, self.l6, 0]]
         )
-        
-        # Symbolic functions for Jacobian
-        self._q0 = Symbol('q0')
-        self._q1 = Symbol('q1')
-        self._q2 = Symbol('q2')
-        self._q3 = Symbol('q3')
-        self._q4 = Symbol('q4')
-        self._q5 = Symbol('q5')
-        self.q = Matrix([self._q0, self._q1, self._q2, self._q3, self._q4, self._q5])
         
         # Kinematics initialisation
         self.kinematics = Kinematics()
