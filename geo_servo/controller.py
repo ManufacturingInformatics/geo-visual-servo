@@ -65,7 +65,7 @@ class Controller:
             jacobian (jnp.ndarray): Body Jacobian of the manipulator at the current configuration. 
 
         Returns:
-            jnp.float64: Returns the metric geodesic distance approximation. 
+            jnp.float64: Returns the metric geodesic distance approximation and the separate rotation and position errors
         """
         # Need to ensure that the provided pose is in the SE(3) form. 
         assert pose.shape == (4,4)
@@ -90,7 +90,7 @@ class Controller:
         delta_p = jnp.linalg.norm(
             G_hamil[0:3, 0:3] @ (p_0 - p_1), ord=None
         )
-        return jnp.sqrt(delta_R + delta_p)
+        return jnp.sqrt(delta_R + delta_p), delta_R, delta_p
     
     def saturate(self, u) -> jnp.ndarray:
         """
@@ -133,8 +133,7 @@ class Controller:
         error = error.at[0:3].set(R.T @ self.Kp @ (p - self.target_pose[0:3,-1].reshape((3,1))))
         error = error.at[3:6].set(0.5 * self.Kr @ vee_map(e_temp))
         error = jnp.round(jnp.where(robot.se3.near_zero(error, 1e-3), 0, error), 4)
-        G_vec = jnp.linalg.pinv(jacobian).T @ robot.get_grav_vec 
-        return -m_cross @ twists - error # g_cross.T @ G_vec 
+        return  - m_cross @ twists - error 
     
     def _compute_damping_injection(self, jacobian, joint_speeds):
         """
