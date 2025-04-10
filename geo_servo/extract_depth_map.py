@@ -82,4 +82,5 @@ finally:
              q_vals=qVals,
              depth_image=depth_image)
     # Stop streaming
+    robot.shutdown()
     pipeline.stop()
