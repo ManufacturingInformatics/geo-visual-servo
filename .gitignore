@@ -3,3 +3,4 @@ notebooks/.jupyter/*
 notebooks/.ipynb_checkpoints/*
 geo-servo/__pycache__/*
 analysis/matlab/*
+notebooks/.virtual_documents/*

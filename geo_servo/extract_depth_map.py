@@ -1,8 +1,19 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
+from filters import IntelFilters
+import sys
+from configparser import ConfigParser
+from robot import Robot
 
-# Configure depth and color streams
+TYPE = 'initial_pose_multi_hole'
+
+parser = ConfigParser()
+parser.read('./config/robot.conf')
+ip = parser.get('xArm', 'ip')
+
+robot = Robot(ip=ip)
+
 pipeline = rs.pipeline()
 config = rs.config()
 
@@ -11,6 +22,8 @@ pipeline_wrapper = rs.pipeline_wrapper(pipeline)
 pipeline_profile = config.resolve(pipeline_wrapper)
 device = pipeline_profile.get_device()
 device_product_line = str(device.get_info(rs.camera_info.product_line))
+
+filter = IntelFilters()
 
 found_rgb = False
 for s in device.sensors:
@@ -31,6 +44,8 @@ try:
     while True:
 
         # Wait for a coherent pair of frames: depth and color
+        pose = robot.get_pose
+        qVals = robot.joint_vals
         frames = pipeline.wait_for_frames()
         depth_frame = frames.get_depth_frame()
         color_frame = frames.get_color_frame()
@@ -38,7 +53,8 @@ try:
             continue
 
         # Convert images to numpy arrays
-        depth_image = np.asanyarray(depth_frame.get_data())
+        depth = filter.filter(depth_frame)
+        depth_image = np.asanyarray(depth.get_data())
         color_image = np.asanyarray(color_frame.get_data())
 
         # Apply colormap on depth image (image must be converted to 8-bit per pixel first)
@@ -60,6 +76,10 @@ try:
         cv2.waitKey(1)
 
 finally:
-
+    print('Closing camera')
+    np.savez(f'../notebooks/data/{TYPE}.npz',
+             pose=pose,
+             q_vals=qVals,
+             depth_image=depth_image)
     # Stop streaming
     pipeline.stop()
