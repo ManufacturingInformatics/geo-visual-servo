@@ -112,16 +112,16 @@ if __name__ == "__main__":
         print("Shutting down robot")
         final_geo, final_rot, final_pos = control.geodesic(pose, M, jac)
         print(f"Final Geodesic: {final_geo}, Number of inputs: {count}")
-        jnp.savz(f'pose_{POSE_NUM}.npz',
-                    joints=jnp.array(joint_vals),
-                    geo_vals=jnp.array(geodesic_values),
-                    rot_errors=jnp.array(rot_errors),
-                    pos_errors=jnp.array(pos_errors),
-                    mass_vals=jnp.array(mass_vals),
-                    jac_vals=jnp.array(jac_vals),
-                    qdot_vals=jnp.array(qdot_vals),
-                    grav_vals=jnp.array(grav_vals),
-                    pose_vals=jnp.array(pose_vals))
+        # jnp.savez(f'pose_{POSE_NUM}.npz',
+        #             joints=jnp.array(joint_vals),
+        #             geo_vals=jnp.array(geodesic_values),
+        #             rot_errors=jnp.array(rot_errors),
+        #             pos_errors=jnp.array(pos_errors),
+        #             mass_vals=jnp.array(mass_vals),
+        #             jac_vals=jnp.array(jac_vals),
+        #             qdot_vals=jnp.array(qdot_vals),
+        #             grav_vals=jnp.array(grav_vals),
+        #             pose_vals=jnp.array(pose_vals))
         robot.shutdown()
     
     ave_loop = sum(loop_times)/len(loop_times)
