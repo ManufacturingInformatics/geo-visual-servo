@@ -44,6 +44,9 @@ if __name__ == "__main__":
     grav_vals = []
     pose_vals = []
     joint_vals = []
+    mbar = []
+    cartesian_vel = []
+    momenta = []
     
     try:
         
@@ -90,6 +93,9 @@ if __name__ == "__main__":
             if count != 0:
                 code = robot.arm.vc_set_cartesian_velocity(robot_input, is_radian=True, is_tool_coord=True)
             
+            mbar_val = jnp.linalg.pinv(jac).T @ M @ jnp.linalg.pinv(jac)
+            momenta_val = mbar_val @ q_sat
+            
             geo, rot_error, pos_error = control.geodesic(pose, M, jac)
             geodesic_values.append(geo)
             rot_errors.append(rot_error)
@@ -100,6 +106,10 @@ if __name__ == "__main__":
             grav_vals.append(robot.get_grav_vec)
             pose_vals.append(pose)
             joint_vals.append(qVals)
+            cartesian_val.append(q_sat)
+            mbar.append(mbar_val)
+            cartesian_vel.append(q_sat)
+            momenta.append(momenta_val)
             print(f"Geodesic: {geo}, Rotation Error: {rot_error}, Position Error: {pos_error}")
             
             t1 = time.time()
@@ -112,16 +122,18 @@ if __name__ == "__main__":
         print("Shutting down robot")
         final_geo, final_rot, final_pos = control.geodesic(pose, M, jac)
         print(f"Final Geodesic: {final_geo}, Number of inputs: {count}")
-        # jnp.savez(f'pose_{POSE_NUM}.npz',
-        #             joints=jnp.array(joint_vals),
-        #             geo_vals=jnp.array(geodesic_values),
-        #             rot_errors=jnp.array(rot_errors),
-        #             pos_errors=jnp.array(pos_errors),
-        #             mass_vals=jnp.array(mass_vals),
-        #             jac_vals=jnp.array(jac_vals),
-        #             qdot_vals=jnp.array(qdot_vals),
-        #             grav_vals=jnp.array(grav_vals),
-        #             pose_vals=jnp.array(pose_vals))
+        jnp.savez(f'pose_{POSE_NUM}.npz',
+                    joints=jnp.array(joint_vals),
+                    geo_vals=jnp.array(geodesic_values),
+                    rot_errors=jnp.array(rot_errors),
+                    pos_errors=jnp.array(pos_errors),
+                    mass_vals=jnp.array(mass_vals),
+                    jac_vals=jnp.array(jac_vals),
+                    qdot_vals=jnp.array(qdot_vals),
+                    grav_vals=jnp.array(grav_vals),
+                    pose_vals=jnp.array(pose_vals),
+                    cart_val=jnp.array(cartesian_vel),
+                    momenta=jnp.array(momenta))
         robot.shutdown()
     
     ave_loop = sum(loop_times)/len(loop_times)
