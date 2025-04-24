@@ -6,7 +6,7 @@ import sys
 from configparser import ConfigParser
 from robot import Robot
 
-TYPE = 'initial_pose_multi_hole'
+TYPE = 'target_square_hole'
 
 parser = ConfigParser()
 parser.read('./config/robot.conf')
