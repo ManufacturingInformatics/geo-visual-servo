@@ -106,7 +106,6 @@ if __name__ == "__main__":
             grav_vals.append(robot.get_grav_vec)
             pose_vals.append(pose)
             joint_vals.append(qVals)
-            cartesian_val.append(q_sat)
             mbar.append(mbar_val)
             cartesian_vel.append(q_sat)
             momenta.append(momenta_val)
@@ -132,7 +131,7 @@ if __name__ == "__main__":
                     qdot_vals=jnp.array(qdot_vals),
                     grav_vals=jnp.array(grav_vals),
                     pose_vals=jnp.array(pose_vals),
-                    cart_val=jnp.array(cartesian_vel),
+                    cart_vel_val=jnp.array(cartesian_vel),
                     momenta=jnp.array(momenta))
         robot.shutdown()
     
